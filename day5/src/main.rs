@@ -4,7 +4,9 @@ use itertools::Itertools;
 use nom::{
     branch::alt,
     bytes::complete::{tag, take, take_while1},
+    character::complete::{digit0, digit1},
     combinator::{all_consuming, map, map_res, opt},
+    multi::separated_list1,
     sequence::{delimited, preceded, tuple},
     Finish, IResult,
 };
@@ -73,7 +75,8 @@ fn main() {
 fn part1(input: &str) {
     let mut lines = input.lines().skip_while(|line| line.is_empty());
 
-    let crate_lines: Vec<_> = (&mut lines)
+    let crate_lines: Vec<_> = lines
+        .by_ref()
         .map_while(|line| {
             all_consuming(parse_crate_line)(line)
                 .finish()
@@ -133,25 +136,11 @@ fn parse_crate_or_hole(i: &str) -> IResult<&str, Option<Crate>> {
 }
 
 fn parse_crate_line(i: &str) -> IResult<&str, Vec<Option<Crate>>> {
-    let (mut i, c) = parse_crate_or_hole(i)?;
-    let mut v = vec![c];
-
-    loop {
-        let (next_i, maybe_c) = opt(preceded(tag(" "), parse_crate_or_hole))(i)?;
-        match maybe_c {
-            Some(c) => v.push(c),
-            None => break,
-        }
-        i = next_i;
-    }
-
-    Ok((i, v))
+    separated_list1(tag(" "), parse_crate_or_hole)(i)
 }
 
 fn parse_number(i: &str) -> IResult<&str, usize> {
-    map_res(take_while1(|c: char| c.is_ascii_digit()), |s: &str| {
-        s.parse::<usize>()
-    })(i)
+    map_res(digit1, |s: &str| s.parse::<usize>())(i)
 }
 
 fn parse_pile_number(i: &str) -> IResult<&str, usize> {
