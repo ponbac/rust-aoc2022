@@ -1,139 +1,109 @@
-use std::fmt::Debug;
+use std::fmt::{self, Debug, Display};
 
 use itertools::Itertools;
+use nom::{
+    branch::alt,
+    bytes::complete::{tag, take, take_while1},
+    combinator::{all_consuming, map, map_res, opt},
+    sequence::{delimited, preceded, tuple},
+    Finish, IResult,
+};
 
-static EXAMPLE_INPUT: &str = r#"
-    [D]    
-[N] [C]    
-[Z] [M] [P]
- 1   2   3 
+#[derive(Clone, Copy)]
+struct Crate(char);
 
-move 1 from 2 to 1
-move 3 from 1 to 3
-move 2 from 2 to 1
-move 1 from 1 to 2
-"#;
-
-#[derive(Clone)]
-struct Shipyard(Vec<Vec<Option<char>>>);
-
-impl Debug for Shipyard {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut shipyard = "\n".to_owned();
-        for row in &self.0 {
-            shipyard.push('[');
-            shipyard.push_str(&row.iter().map(|c| c.unwrap_or(' ')).collect::<String>());
-            shipyard.push_str("]\n");
-        }
-
-        write!(f, "{}", shipyard)
+impl Debug for Crate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
-impl Shipyard {
-    fn from_str(input: &str) -> Self {
-        let mut shipyard = Vec::new();
-        for line in input.lines().filter(|l| !l.is_empty()) {
-            if line.starts_with("move") || line.starts_with(" 1") {
-                break;
-            }
-
-            let crates = (" ".to_owned() + line)
-                .chars()
-                .chunks(4)
-                .into_iter()
-                .map(|mut chunk| parse_crate(&chunk.join("")))
-                .collect::<Vec<Option<char>>>();
-
-            shipyard.push(crates);
-        }
-
-        let transposed = transpose(shipyard);
-        Self(
-            transposed
-                .iter()
-                .map(|row| row.iter().filter(|c| c.is_some()).cloned().collect())
-                .collect(),
-        )
-    }
-
-    fn apply(&mut self, instruction: Instruction) {
-        let mut from = self.0[instruction.from - 1].clone();
-        let mut to = self.0[instruction.to - 1].clone();
-
-        let mut n_to_take = instruction.num;
-        while n_to_take > 0 {
-            if from.last().is_some() {
-                if to.last().is_none() {
-                    to.pop();
-                }
-
-                to.push(from.pop().unwrap());
-                n_to_take -= 1;
-            } else {
-                from.pop();
-            }
-        }
-
-        self.0[instruction.from - 1] = from;
-        self.0[instruction.to - 1] = to;
+impl Display for Crate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
 #[derive(Debug)]
 struct Instruction {
-    num: usize,
-    from: usize,
-    to: usize,
+    quantity: usize,
+    src: usize,
+    dst: usize,
 }
 
-impl Instruction {
-    fn from_str(input: &str) -> Self {
-        // grab only the numbers
-        let nums = input
-            .chars()
-            .filter(|c| c.is_ascii_digit())
-            .collect::<String>()
-            .chars()
-            .map(|c| c.to_digit(10).unwrap() as usize)
-            .collect::<Vec<usize>>();
+#[derive(Clone)]
+struct Piles(Vec<Vec<Crate>>);
 
-        let num = nums[0];
-        let from = nums[1];
-        let to = nums[2];
+impl Debug for Piles {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, pile) in self.0.iter().enumerate() {
+            writeln!(f, "Pile {}: {:?}", i, pile)?;
+        }
+        Ok(())
+    }
+}
 
-        Self { num, from, to }
+impl Piles {
+    fn apply(&mut self, ins: &Instruction) {
+        for _ in 0..ins.quantity {
+            let crate_ = self.0[ins.src].pop().unwrap();
+            self.0[ins.dst].push(crate_);
+        }
+    }
+
+    fn apply2(&mut self, ins: &Instruction) {
+        let mut crates_to_move = Vec::new();
+        for _ in 0..ins.quantity {
+            let crate_ = self.0[ins.src].pop().unwrap();
+            crates_to_move.push(crate_);
+        }
+
+        for crate_ in crates_to_move.into_iter().rev() {
+            self.0[ins.dst].push(crate_);
+        }
     }
 }
 
 fn main() {
-    let _input = include_str!("input.txt");
+    let input = include_str!("input.txt");
 
-    part1(EXAMPLE_INPUT);
+    part1(input);
 }
 
 fn part1(input: &str) {
-    let mut shipyard = Shipyard::from_str(input);
-    println!("{:?}", shipyard);
+    let mut lines = input.lines().skip_while(|line| line.is_empty());
 
-    let instructions = input
-        .lines()
-        .filter(|l| l.starts_with("move"))
-        .map(Instruction::from_str)
-        .collect::<Vec<Instruction>>();
-    println!("{:?}", instructions);
+    let crate_lines: Vec<_> = (&mut lines)
+        .map_while(|line| {
+            all_consuming(parse_crate_line)(line)
+                .finish()
+                .ok()
+                .map(|(_, line)| line)
+        })
+        .collect();
+    let mut piles1 = Piles(transpose_rev(crate_lines));
+    let mut piles2 = piles1.clone();
+    println!("{piles1:?}");
 
-    for instruction in instructions {
-        shipyard.apply(instruction);
-        println!("{:?}", shipyard);
+    // we've consumed the "numbers line" but not the separating line
+    assert!(lines.next().unwrap().is_empty());
+
+    for i in lines.map(|line| all_consuming(parse_instruction)(line).finish().unwrap().1) {
+        piles1.apply(&i);
+        piles2.apply2(&i);
     }
+
+    println!(
+        "Part 1: {:?}",
+        piles1.0.iter().map(|p| p.last().unwrap()).join("")
+    );
+    println!(
+        "Part 2: {:?}",
+        piles2.0.iter().map(|p| p.last().unwrap()).join("")
+    );
 }
 
-fn parse_crate(i: &str) -> Option<char> {
-    i.chars().nth(2)
-}
-
-fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
+fn transpose_rev<T>(v: Vec<Vec<Option<T>>>) -> Vec<Vec<T>> {
     assert!(!v.is_empty());
     let len = v[0].len();
     let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
@@ -142,8 +112,59 @@ fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
             iters
                 .iter_mut()
                 .rev()
-                .map(|n| n.next().unwrap())
+                .filter_map(|n| n.next().unwrap())
                 .collect::<Vec<T>>()
         })
         .collect()
+}
+
+fn parse_crate(i: &str) -> IResult<&str, Crate> {
+    let first_char = |s: &str| Crate(s.chars().next().unwrap());
+    let f = delimited(tag("["), take(1_usize), tag("]"));
+    map(f, first_char)(i)
+}
+
+fn parse_hole(i: &str) -> IResult<&str, ()> {
+    map(tag("   "), drop)(i)
+}
+
+fn parse_crate_or_hole(i: &str) -> IResult<&str, Option<Crate>> {
+    alt((map(parse_crate, Some), map(parse_hole, |_| None)))(i)
+}
+
+fn parse_crate_line(i: &str) -> IResult<&str, Vec<Option<Crate>>> {
+    let (mut i, c) = parse_crate_or_hole(i)?;
+    let mut v = vec![c];
+
+    loop {
+        let (next_i, maybe_c) = opt(preceded(tag(" "), parse_crate_or_hole))(i)?;
+        match maybe_c {
+            Some(c) => v.push(c),
+            None => break,
+        }
+        i = next_i;
+    }
+
+    Ok((i, v))
+}
+
+fn parse_number(i: &str) -> IResult<&str, usize> {
+    map_res(take_while1(|c: char| c.is_ascii_digit()), |s: &str| {
+        s.parse::<usize>()
+    })(i)
+}
+
+fn parse_pile_number(i: &str) -> IResult<&str, usize> {
+    map(parse_number, |i| i - 1)(i)
+}
+
+fn parse_instruction(i: &str) -> IResult<&str, Instruction> {
+    map(
+        tuple((
+            preceded(tag("move "), parse_number),
+            preceded(tag(" from "), parse_pile_number),
+            preceded(tag(" to "), parse_pile_number),
+        )),
+        |(quantity, src, dst)| Instruction { quantity, src, dst },
+    )(i)
 }
