@@ -174,6 +174,27 @@ fn main() -> color_eyre::Result<()> {
 
     println!("Part 1: {}", sum);
 
+    let total_space = 70_000_000_u64;
+    let space_needed = 30_000_000_u64;
+
+    let space_used = tree
+        .traverse_pre_order(tree.root_node_id().unwrap())?
+        .filter(|node| node.children().is_empty())
+        .map(|node| node.data().size)
+        .sum::<u64>();
+    let space_unused = total_space - space_used;
+    let min_space_to_free = space_needed - space_unused;
+
+    let dir_to_delete = tree
+        .traverse_pre_order(tree.root_node_id().unwrap())?
+        .filter(|node| !node.children().is_empty())
+        .map(|node| (node.data().path.clone(), total_size(&tree, node).unwrap()))
+        .filter(|(_, size)| size >= &min_space_to_free)
+        .min_by_key(|(_, size)| *size)
+        .unwrap();
+
+    println!("Part 2: {:?}", dir_to_delete);
+
     Ok(())
 }
 
