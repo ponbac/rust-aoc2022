@@ -1,4 +1,5 @@
 use camino::Utf8PathBuf;
+use id_tree::{InsertBehavior, Node, Tree};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_while1},
@@ -99,18 +100,81 @@ fn parse_line(i: &str) -> IResult<&str, Line> {
     ))(i)
 }
 
-fn main() {
+#[derive(Debug)]
+struct FsEntry {
+    path: Utf8PathBuf,
+    size: u64,
+}
+
+fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
+
     let input = include_str!("input.txt");
-    let input = EXAMPLE_INPUT;
+    // let input = EXAMPLE_INPUT;
 
     let lines = input
         .lines()
         .filter(|l| !l.is_empty())
         .map(|l| all_consuming(parse_line)(l).finish().unwrap().1);
 
+    let mut tree = Tree::new();
+    let root = tree.insert(
+        Node::new(FsEntry {
+            path: "/".into(),
+            size: 0,
+        }),
+        InsertBehavior::AsRoot,
+    )?;
+    let mut curr = root;
+
     for line in lines {
-        println!("{line:?}");
+        match line {
+            Line::Command(cmd) => match cmd {
+                Command::Ls => {
+                    // ignore for now
+                }
+                Command::Cd(path) => match path.as_str() {
+                    "/" => {
+                        // ignore for now
+                    }
+                    ".." => {
+                        curr = tree.get(&curr)?.parent().unwrap().clone();
+                    }
+                    _ => {
+                        let node = Node::new(FsEntry {
+                            path: path.clone(),
+                            size: 0,
+                        });
+                        curr = tree.insert(node, InsertBehavior::UnderNode(&curr))?;
+                    }
+                },
+            },
+            Line::Entry(entry) => match entry {
+                Entry::Dir(_path) => {
+                    // ignore for now
+                }
+                Entry::File(size, path) => {
+                    let node = Node::new(FsEntry { path, size });
+                    tree.insert(node, InsertBehavior::UnderNode(&curr))?;
+                }
+            },
+        }
     }
+
+    let mut s = String::new();
+    tree.write_formatted(&mut s)?;
+    println!("{}", s);
+
+    let sum = tree
+        .traverse_pre_order(tree.root_node_id().unwrap())?
+        .filter(|node| !node.children().is_empty())
+        .map(|node| total_size(&tree, node).unwrap())
+        .filter(|&size| size <= 100_000)
+        .sum::<u64>();
+
+    println!("Part 1: {}", sum);
+
+    Ok(())
 }
 
 fn parse_path(i: &str) -> IResult<&str, Utf8PathBuf> {
@@ -118,4 +182,12 @@ fn parse_path(i: &str) -> IResult<&str, Utf8PathBuf> {
         take_while1(|c: char| "abcdefghijklmnopqrstuvwxyz./".contains(c)),
         Into::into,
     )(i)
+}
+
+fn total_size(tree: &Tree<FsEntry>, node: &Node<FsEntry>) -> color_eyre::Result<u64> {
+    let mut total = node.data().size;
+    for child in node.children() {
+        total += total_size(tree, tree.get(child)?)?;
+    }
+    Ok(total)
 }
