@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, time::Duration};
 
-use egui::{Color32, Sense, Stroke};
+use egui::{Color32, Sense, Slider, Stroke};
 use nom::{combinator::all_consuming, Finish};
 use parse::{Direction, GridPos, Instruction};
 
@@ -19,15 +19,16 @@ fn main() {
     let web_options = eframe::WebOptions::default();
 
     wasm_bindgen_futures::spawn_local(async {
-        eframe::start_web(
-            // this is the id of the `<canvas>` element we have
-            // in our `index.html`
-            "canvas",
-            web_options,
-            Box::new(|_cc| Box::new(MyApp::new())),
-        )
-        .await
-        .expect("failed to start eframe");
+        eframe::WebRunner::new()
+            .start(
+                // this is the id of the `<canvas>` element we have
+                // in our `index.html`
+                "canvas",
+                web_options,
+                Box::new(|_cc| Box::new(MyApp::new())),
+            )
+            .await
+            .expect("failed to start eframe");
     });
 }
 
@@ -45,11 +46,14 @@ fn main() {
 }
 
 struct MyApp {
-    // for pop_front 👇
     instructions: VecDeque<Instruction>,
     head: GridPos,
     tail: GridPos,
     tail_visited: HashSet<GridPos>,
+    speed: usize,
+    paused: bool,
+    show_sidebar: bool,
+    step: bool,
 }
 
 impl MyApp {
@@ -64,6 +68,10 @@ impl MyApp {
             head: GridPos { x: 0, y: 0 },
             tail: GridPos { x: 0, y: 0 },
             tail_visited: Default::default(),
+            speed: 1,
+            paused: true,
+            show_sidebar: true,
+            step: false,
         }
     }
 
@@ -76,8 +84,6 @@ impl MyApp {
         self.head += instruction.dir.delta();
 
         let diff = self.head - self.tail;
-        // there - I keep seeing Haskell solutions that use pattern matching.
-        // well, WE CAN HAVE SOME TOO:
         let (dx, dy) = match (diff.x, diff.y) {
             // overlapping
             (0, 0) => (0, 0),
@@ -116,29 +122,83 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.update_state();
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.style_mut().spacing.interact_size.y *= 1.4;
+                ui.style_mut()
+                    .text_styles
+                    .get_mut(&egui::TextStyle::Button)
+                    .unwrap()
+                    .size *= 1.4;
 
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
-            ui.label(format!("{} instructions left", self.instructions.len()));
-            ui.label(format!("{} places visited", self.tail_visited.len()));
-            egui::ScrollArea::new([false, true]).show(ui, |ui| {
-                for ins in &self.instructions {
-                    let arrow = match ins.dir {
-                        Direction::Up => "⬆",
-                        Direction::Down => "⬇",
-                        Direction::Right => "➡",
-                        Direction::Left => "⬅",
-                    };
-                    ui.label(arrow.repeat(ins.dist as _));
+                if ui.button("Reset").clicked() {
+                    *self = Self::new();
                 }
-            })
+                if ui.button("Step").clicked() {
+                    self.step = true;
+                }
+
+                let paused = self.paused;
+                ui.toggle_value(&mut self.paused, if paused { "▶" } else { "⏸" });
+
+                ui.toggle_value(&mut self.show_sidebar, "Sidebar");
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Speed: ");
+                ui.add(Slider::new(&mut self.speed, 1..=20).prefix("x"));
+            });
         });
+
+        if self.step {
+            self.update_state();
+            self.step = false;
+        } else if !self.paused {
+            for _ in 0..self.speed {
+                self.update_state();
+            }
+            ctx.request_repaint_after(Duration::from_millis(25));
+        }
+
+        if self.show_sidebar {
+            egui::SidePanel::right("side_panel").show(ctx, |ui| {
+                ui.label(format!("{} places visited", self.tail_visited.len()));
+                egui::ScrollArea::new([false, true]).show(ui, |ui| {
+                    let mut it = self.instructions.iter();
+                    for (i, ins) in it.by_ref().enumerate() {
+                        if i >= 20 {
+                            break;
+                        }
+
+                        let arrow = match ins.dir {
+                            Direction::Up => "⬆",
+                            Direction::Down => "⬇",
+                            Direction::Right => "➡",
+                            Direction::Left => "⬅",
+                        };
+                        let dist = ins.dist as usize;
+                        if dist > 5 {
+                            ui.label(format!("{}+{}", arrow.repeat(5), dist - 5));
+                        } else {
+                            ui.label(arrow.repeat(dist));
+                        }
+                    }
+                    let remaining = it.count();
+
+                    if remaining > 0 {
+                        ui.label(format!("(+ {remaining} more)"));
+                    }
+                })
+            });
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
-            const CANVAS_WIDTH: f32 = 900.0;
-            const CANVAS_HEIGHT: f32 = 700.0;
+            let mut painter_size = ui.available_size_before_wrap();
+            if !painter_size.is_finite() {
+                painter_size = egui::vec2(500.0, 500.0);
+            }
+
             const SIDE: f32 = 5.0;
 
-            let painter_size = egui::vec2(CANVAS_WIDTH, CANVAS_HEIGHT);
             let (res, painter) = ui.allocate_painter(painter_size, Sense::hover());
             let center = res.rect.center().to_vec2();
 
@@ -146,16 +206,19 @@ impl eframe::App for MyApp {
                 (egui::vec2(pos.x as f32 * SIDE, pos.y as f32 * SIDE) + center).to_pos2()
             };
 
-            let half_width = (CANVAS_WIDTH / SIDE).floor() as i32;
-            let half_height = (CANVAS_HEIGHT / SIDE).floor() as i32;
+            let half_width = (painter_size.x / SIDE).floor() as i32;
+            let half_height = (painter_size.y / SIDE).floor() as i32;
 
             for x in -half_width..half_width {
                 for y in -half_height..half_height {
                     let dot = GridPos { x, y };
-                    if !self.tail_visited.contains(&dot) {
+                    let color = if dot.x == 0 && dot.y == 0 {
+                        Color32::WHITE
+                    } else if self.tail_visited.contains(&dot) {
+                        Color32::DARK_RED
+                    } else {
                         continue;
-                    }
-                    let color = Color32::DARK_RED;
+                    };
 
                     let dot_pos = to_panel_pos(dot);
                     painter.circle_stroke(dot_pos, 1.0, Stroke::new(2.0, color));
@@ -177,7 +240,5 @@ impl eframe::App for MyApp {
                 Stroke::new(1.0, Color32::YELLOW),
             )
         });
-
-        ctx.request_repaint_after(Duration::from_millis(25));
     }
 }
