@@ -147,12 +147,11 @@ fn main() {
         .0
         .iter()
         .enumerate()
-        .map(|(y, row)| {
+        .flat_map(|(y, row)| {
             row.iter()
                 .enumerate()
                 .map(|(x, _)| tree_map.scenic_score(x, y))
-                .max()
-                .unwrap()
+                .collect::<Vec<_>>()
         })
         .max()
         .unwrap();
