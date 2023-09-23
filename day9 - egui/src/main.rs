@@ -8,6 +8,30 @@ mod parse;
 
 use eframe::{egui, epaint::ahash::HashSet};
 
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    // Make sure panics are logged using `console.error`.
+    console_error_panic_hook::set_once();
+
+    // Redirect tracing to console.log and friends:
+    tracing_wasm::set_as_global_default();
+
+    let web_options = eframe::WebOptions::default();
+
+    wasm_bindgen_futures::spawn_local(async {
+        eframe::start_web(
+            // this is the id of the `<canvas>` element we have
+            // in our `index.html`
+            "canvas",
+            web_options,
+            Box::new(|_cc| Box::new(MyApp::new())),
+        )
+        .await
+        .expect("failed to start eframe");
+    });
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     let options = eframe::NativeOptions {
         initial_window_size: Some(egui::vec2(1280.0, 720.0)),
@@ -16,7 +40,6 @@ fn main() {
     let _ = eframe::run_native(
         "AoC 2022 — Day 9",
         options,
-        // we have a constructor now! 👇
         Box::new(|_cc| Box::new(MyApp::new())),
     );
 }
