@@ -16,8 +16,8 @@ U 20
 mod parse;
 
 fn main() {
-    // let input = include_str!("input.txt");
-    let input = EXAMPLE_INPUT;
+    let input = include_str!("input.txt");
+    // let input = EXAMPLE_INPUT;
 
     let instructions = input
         .lines()
@@ -77,18 +77,20 @@ fn main() {
                     (-1, 2) => *knot += GridPos { x: -1, y: 1 },
                     (1, -2) => *knot += GridPos { x: 1, y: -1 },
                     (-1, -2) => *knot += GridPos { x: -1, y: -1 },
+                    (2, 2) => *knot += GridPos { x: 1, y: 1 },
+                    (-2, 2) => *knot += GridPos { x: -1, y: 1 },
+                    (2, -2) => *knot += GridPos { x: 1, y: -1 },
+                    (-2, -2) => *knot += GridPos { x: -1, y: -1 },
                     _ => (),
                 }
 
                 prev_knot = *knot;
 
-                if i == 9 {
+                if i == 8 {
                     visited_by_tail.insert(*knot);
                 }
             }
         }
-
-        println!("{:?}", knots);
     }
 
     println!("Part 2: {:?}", visited_by_tail.len());
