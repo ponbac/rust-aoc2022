@@ -9,9 +9,9 @@ use nom::{
 use std::fmt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct GridPos {
-    pub(crate) x: i32,
-    pub(crate) y: i32,
+pub struct GridPos {
+    pub x: i32,
+    pub y: i32,
 }
 
 impl fmt::Debug for GridPos {
@@ -52,7 +52,7 @@ impl std::ops::Sub for GridPos {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub(crate) enum Direction {
+pub enum Direction {
     Up,
     Down,
     Left,
@@ -60,7 +60,7 @@ pub(crate) enum Direction {
 }
 
 impl Direction {
-    pub(crate) fn parse(i: &str) -> IResult<&str, Self> {
+    pub fn parse(i: &str) -> IResult<&str, Self> {
         alt((
             value(Direction::Up, tag("U")),
             value(Direction::Down, tag("D")),
@@ -69,7 +69,7 @@ impl Direction {
         ))(i)
     }
 
-    pub(crate) fn delta(self) -> GridPos {
+    pub fn delta(self) -> GridPos {
         match self {
             Direction::Up => GridPos { x: 0, y: -1 },
             Direction::Down => GridPos { x: 0, y: 1 },
@@ -80,13 +80,13 @@ impl Direction {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Instruction {
-    pub(crate) dir: Direction,
-    pub(crate) dist: u32,
+pub struct Instruction {
+    pub dir: Direction,
+    pub dist: u32,
 }
 
 impl Instruction {
-    pub(crate) fn parse(i: &str) -> IResult<&str, Self> {
+    pub fn parse(i: &str) -> IResult<&str, Self> {
         map(
             tuple((
                 Direction::parse,
