@@ -123,7 +123,9 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+            ui.add_space(5.0);
             ui.horizontal(|ui| {
+                // top padding
                 ui.style_mut().spacing.interact_size.y *= 1.4;
                 ui.style_mut()
                     .text_styles
@@ -148,6 +150,7 @@ impl eframe::App for MyApp {
                 ui.label("Speed: ");
                 ui.add(Slider::new(&mut self.speed, 1..=20).prefix("x"));
             });
+            ui.add_space(2.5);
         });
 
         if self.step {
