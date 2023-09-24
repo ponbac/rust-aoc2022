@@ -1,7 +1,6 @@
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    character::complete::digit1,
     combinator::{map, value},
     sequence::preceded,
     IResult,
@@ -26,6 +25,42 @@ impl Instruction {
         match self {
             Self::Noop => 1,
             Self::Addx(_) => 2,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct Machine {
+    instructions: Vec<Instruction>,
+    current_instruction: Option<Instruction>,
+    cycle: u32,
+    x_register: i32,
+}
+
+impl Machine {
+    fn new(instructions: Vec<Instruction>) -> Self {
+        Self {
+            instructions,
+            current_instruction: None,
+            cycle: 0,
+            x_register: 0,
+        }
+    }
+
+    fn step(&mut self) {
+        if self.cycle == 0 {
+            self.current_instruction = self.instructions.pop();
+        }
+
+        if let Some(instruction) = self.current_instruction {
+            self.cycle += 1;
+            if self.cycle == instruction.cycles() {
+                self.cycle = 0;
+                match instruction {
+                    Instruction::Noop => {}
+                    Instruction::Addx(x) => self.x_register += x,
+                }
+            }
         }
     }
 }
