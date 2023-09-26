@@ -32,42 +32,51 @@ impl Instruction {
 #[derive(Debug)]
 struct Machine {
     instructions: Vec<Instruction>,
-    current_instruction: Option<Instruction>,
+    current_instruction: Option<(Instruction, u32)>,
     cycle: u32,
     x_register: i32,
 }
 
 impl Machine {
     fn new(instructions: Vec<Instruction>) -> Self {
-        Self {
-            instructions,
+        let mut new = Machine {
+            instructions: instructions.into_iter().rev().collect(),
             current_instruction: None,
-            cycle: 0,
-            x_register: 0,
-        }
+            cycle: 1,
+            x_register: 1,
+        };
+        new.decode();
+
+        new
     }
 
-    fn step(&mut self) {
-        if self.cycle == 0 {
-            self.current_instruction = self.instructions.pop();
+    fn decode(&mut self) {
+        self.current_instruction = self.instructions.pop().map(|i| (i, i.cycles()));
+    }
+
+    fn step(&mut self) -> bool {
+        if self.current_instruction.is_none() {
+            return false;
         }
 
-        if let Some(instruction) = self.current_instruction {
-            self.cycle += 1;
-            if self.cycle == instruction.cycles() {
-                self.cycle = 0;
-                match instruction {
-                    Instruction::Noop => {}
-                    Instruction::Addx(x) => self.x_register += x,
-                }
+        let (instruction, cycles_left) = self.current_instruction.as_mut().unwrap();
+        *cycles_left -= 1;
+        if *cycles_left == 0 {
+            match instruction {
+                Instruction::Noop => {}
+                Instruction::Addx(x) => self.x_register += *x,
             }
+            self.decode();
         }
+
+        self.cycle += 1;
+        true
     }
 }
 
 fn main() {
-    // let input = include_str!("input.txt");
-    let input = EXAMPLE_INPUT;
+    let input = include_str!("input.txt");
+    // let input = EXAMPLE_INPUT;
 
     let instructions = input
         .lines()
@@ -75,7 +84,18 @@ fn main() {
         .map(|line| Instruction::parse(line).unwrap().1)
         .collect::<Vec<_>>();
 
-    for instruction in instructions {
-        println!("{:?}", instruction);
+    let mut machine = Machine::new(instructions);
+
+    let mut cycle_sum = 0;
+    while machine.step() {
+        match machine.cycle {
+            20 | 60 | 100 | 140 | 180 | 220 => {
+                println!("Cycle {}: {}", machine.cycle, machine.x_register);
+                cycle_sum += machine.cycle as i32 * machine.x_register;
+            }
+            _ => (),
+        }
     }
+
+    println!("Part 1: {}", cycle_sum);
 }
