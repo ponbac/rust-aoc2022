@@ -1,3 +1,5 @@
+use std::{collections::VecDeque, fmt};
+
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -29,21 +31,43 @@ impl Instruction {
     }
 }
 
-#[derive(Debug)]
 struct Machine {
-    instructions: Vec<Instruction>,
+    instructions: VecDeque<Instruction>,
     current_instruction: Option<(Instruction, u32)>,
     cycle: u32,
     x_register: i32,
+    display_lines: Vec<u64>,
+}
+
+impl fmt::Debug for Machine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(
+            f,
+            "cycle={} x={} current={:?} ({} instructions left)",
+            self.cycle,
+            self.x_register,
+            self.current_instruction,
+            self.instructions.len()
+        )?;
+        for line in &self.display_lines {
+            for i in 0..40 {
+                let c = if line & cycle_mask(i) > 0 { '#' } else { '.' };
+                write!(f, "{c}")?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
 }
 
 impl Machine {
-    fn new(instructions: Vec<Instruction>) -> Self {
+    fn new(instructions: VecDeque<Instruction>) -> Self {
         let mut new = Machine {
-            instructions: instructions.into_iter().rev().collect(),
+            instructions,
             current_instruction: None,
-            cycle: 1,
+            cycle: 0,
             x_register: 1,
+            display_lines: Vec::new(),
         };
         new.decode();
 
@@ -51,7 +75,18 @@ impl Machine {
     }
 
     fn decode(&mut self) {
-        self.current_instruction = self.instructions.pop().map(|i| (i, i.cycles()));
+        self.current_instruction = self.instructions.pop_front().map(|ins| (ins, ins.cycles()));
+    }
+
+    fn draw(&mut self) {
+        let crt_line = (self.cycle / 40) as usize;
+        if crt_line + 1 > self.display_lines.len() {
+            self.display_lines.push(0);
+        }
+        let crt_line = self.display_lines.get_mut(crt_line).unwrap();
+        let cycle_mask = cycle_mask(self.cycle);
+        let sprite = sprite_value(self.x_register as _);
+        *crt_line |= cycle_mask & sprite;
     }
 
     fn step(&mut self) -> bool {
@@ -59,10 +94,10 @@ impl Machine {
             return false;
         }
 
-        let (instruction, cycles_left) = self.current_instruction.as_mut().unwrap();
+        let (ins, cycles_left) = self.current_instruction.as_mut().unwrap();
         *cycles_left -= 1;
         if *cycles_left == 0 {
-            match instruction {
+            match ins {
                 Instruction::Noop => {}
                 Instruction::Addx(x) => self.x_register += *x,
             }
@@ -76,8 +111,15 @@ impl Machine {
 
 const DISPLAY_MASK: u64 = 0b1111111111111111111111111111111111111111;
 
-fn sprite_value(pos: u32) -> u64 {
-    (0b11100000000000000000000000000000000000000 >> pos) & DISPLAY_MASK
+fn sprite_value(pos: i32) -> u64 {
+    let model = 0b11100000000000000000000000000000000000000_u64;
+    let shifted;
+    if pos < 0 {
+        (shifted, _) = model.overflowing_shl((-pos).try_into().unwrap());
+    } else {
+        (shifted, _) = model.overflowing_shr(pos.try_into().unwrap());
+    }
+    shifted & DISPLAY_MASK
 }
 
 fn cycle_mask(cycle: u32) -> u64 {
@@ -92,50 +134,16 @@ fn main() {
         .lines()
         .filter(|line| !line.is_empty())
         .map(|line| Instruction::parse(line).unwrap().1)
-        .collect::<Vec<_>>();
+        .collect::<VecDeque<_>>();
 
     let mut machine = Machine::new(instructions);
 
-    let mut cycle_sum = 0;
-    while machine.step() {
-        match machine.cycle {
-            20 | 60 | 100 | 140 | 180 | 220 => {
-                println!("Cycle {}: {}", machine.cycle, machine.x_register);
-                cycle_sum += machine.cycle as i32 * machine.x_register;
-            }
-            _ => (),
+    loop {
+        machine.draw();
+        println!("{:?}", machine);
+        if !machine.step() {
+            break;
         }
     }
-
-    println!("Part 1: {}", cycle_sum);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn test_sprite_value() {
-        assert_eq!(
-            format!("{:040b}", sprite_value(0)),
-            "1100000000000000000000000000000000000000"
-        );
-        assert_eq!(
-            format!("{:040b}", sprite_value(1)),
-            "1110000000000000000000000000000000000000"
-        );
-        assert_eq!(
-            format!("{:040b}", sprite_value(38)),
-            "0000000000000000000000000000000000000111"
-        );
-        assert_eq!(
-            format!("{:040b}", sprite_value(39)),
-            "0000000000000000000000000000000000000011"
-        );
-        assert_eq!(
-            format!("{:040b}", sprite_value(40)),
-            "0000000000000000000000000000000000000001"
-        );
-    }
+    println!("Part 2: {:?}", machine);
 }
