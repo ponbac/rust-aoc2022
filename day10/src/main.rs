@@ -74,6 +74,16 @@ impl Machine {
     }
 }
 
+const DISPLAY_MASK: u64 = 0b1111111111111111111111111111111111111111;
+
+fn sprite_value(pos: u32) -> u64 {
+    (0b11100000000000000000000000000000000000000 >> pos) & DISPLAY_MASK
+}
+
+fn cycle_mask(cycle: u32) -> u64 {
+    (0b1000000000000000000000000000000000000000 >> (cycle % 40)) & DISPLAY_MASK
+}
+
 fn main() {
     let input = include_str!("input.txt");
     // let input = EXAMPLE_INPUT;
@@ -98,4 +108,34 @@ fn main() {
     }
 
     println!("Part 1: {}", cycle_sum);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_sprite_value() {
+        assert_eq!(
+            format!("{:040b}", sprite_value(0)),
+            "1100000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format!("{:040b}", sprite_value(1)),
+            "1110000000000000000000000000000000000000"
+        );
+        assert_eq!(
+            format!("{:040b}", sprite_value(38)),
+            "0000000000000000000000000000000000000111"
+        );
+        assert_eq!(
+            format!("{:040b}", sprite_value(39)),
+            "0000000000000000000000000000000000000011"
+        );
+        assert_eq!(
+            format!("{:040b}", sprite_value(40)),
+            "0000000000000000000000000000000000000001"
+        );
+    }
 }
